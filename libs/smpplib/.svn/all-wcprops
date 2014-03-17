@@ -1,0 +1,41 @@
+K 25
+svn:wc:ra_dav:version-url
+V 34
+/svn/!svn/ver/15/trunk/src/smpplib
+END
+pdu.py
+K 25
+svn:wc:ra_dav:version-url
+V 41
+/svn/!svn/ver/15/trunk/src/smpplib/pdu.py
+END
+command.py
+K 25
+svn:wc:ra_dav:version-url
+V 45
+/svn/!svn/ver/14/trunk/src/smpplib/command.py
+END
+client.py
+K 25
+svn:wc:ra_dav:version-url
+V 43
+/svn/!svn/ver/4/trunk/src/smpplib/client.py
+END
+smpp.py
+K 25
+svn:wc:ra_dav:version-url
+V 42
+/svn/!svn/ver/15/trunk/src/smpplib/smpp.py
+END
+__init__.py
+K 25
+svn:wc:ra_dav:version-url
+V 45
+/svn/!svn/ver/4/trunk/src/smpplib/__init__.py
+END
+ptypes.py
+K 25
+svn:wc:ra_dav:version-url
+V 43
+/svn/!svn/ver/4/trunk/src/smpplib/ptypes.py
+END
