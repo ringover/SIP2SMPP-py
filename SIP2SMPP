@@ -1,7 +1,10 @@
 #!/usr/bin/env python
 from libs import smpplib
-import sys,os,socket,time, uuid, hashlib,re
+import sys,os,socket,time, uuid, hashlib,re,logging
 from thread import *
+
+#import pdb #debug mode : pdb.set_trace() 
+
 sys.excepthook = lambda *args: None
 
 # SIP Local Port to bind
@@ -10,13 +13,13 @@ LOCAL_SIP_PORT = 5066
 
 # IPBX
 DEST_SIP_IP = '127.0.0.1'
-DEST_SIP_PORT = 5061
+DEST_SIP_PORT = 6000
 
 # SMPP 
 SMPP_IP = '127.0.0.1'
 SMPP_PORT = '2775'
-SMPP_LOGIN = 'LOGIN'
-SMPP_PASSWORD = 'PASSWORD'
+SMPP_LOGIN = 'login'
+SMPP_PASSWORD = 'password'
 
 
 #############################################################################################
@@ -24,61 +27,77 @@ SMPP_PASSWORD = 'PASSWORD'
 #############################################################################################
 #############################################################################################
 
-sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.SOL_UDP)
-sock.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
-sock.setblocking(0)
+#SOCK init
+SOCK_SIP  = None 
+SOCK_SMPP = None
+
+##########
+# LOG
+#####
+# DEBUG | INFO | WARNING | ERROR | CRITICAL
+#####
+logging.basicConfig(level=logging.INFO) 
+log = logging.getLogger('SMSC')
+##########
 
 sys.path.insert(0, '..')
 #####
 # Connect / DISCONNECT FROM SMPP
 #####
 def smppConnect():
-	smpp = smpplib.client.Client(SMPP_IP, SMPP_PORT)
-	smpp.connect()
-	print 'Activating SMPP on '+str(SMPP_IP)+':'+str(SMPP_PORT)
-	start_new_thread( smpp2sip , ( smpp ,))
-	smpp.bind_transceiver(system_id=SMPP_LOGIN, password=SMPP_PASSWORD, system_type='www')
-	return smpp
+	global SOCK_SMPP
+	SOCK_SMPP = smpplib.client.Client(SMPP_IP, SMPP_PORT)
+	SOCK_SMPP.connect()
+	log.info('Activating SMPP on '+str(SMPP_IP)+':'+str(SMPP_PORT))
+	SOCK_SMPP.bind_transceiver(system_id=SMPP_LOGIN, password=SMPP_PASSWORD, system_type='www')
+	log.info('.................................')
 
 def smppDisconnect(smpp):
-        smpp.unbind()
-        smpp.disconnect()
-	print '\n\nDisconnected from SMPP Network'
+        SOCK_SMPP.unbind()
+        SOCK_SMPP.disconnect()
+	log.info('\n\nDisconnected from SMPP Network')
 
+#####
+# Log SMS
+#####
 def logSMS(FROM, TO, MSG, info):
-	print '  _______    Date : '+str(time.asctime( time.localtime(time.time()) ))+' - '+str(info)
-        print ' |\_____/|   From : '+str(FROM)
-        print ' |_______|   To : '+str(TO)
-        print '             Message : '+str(MSG)
-        print '###################################################################################'	
+	log.info('  _______    Date : '+str(time.asctime( time.localtime(time.time()) ))+' - '+str(info))
+        log.info(' |\_____/|   From : '+str(FROM))
+        log.info(' |_______|   To : '+str(TO))
+        log.info('             Message : '+str(MSG))
+        log.info('###################################################################################')
 
 #####
 # Connect / DISCONNECT FROM SIP
 #####
 def sipConnect():
-	print 'Activating SIP Port on '+str(LOCAL_SIP_IP)+':'+str(LOCAL_SIP_PORT)
-	sock.bind((LOCAL_SIP_IP,LOCAL_SIP_PORT))
-	print 'Waiting for SIP Messages from '+str(DEST_SIP_IP)+':'+str(DEST_SIP_PORT)
+	global SOCK_SIP
+	SOCK_SIP = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.SOL_UDP)
+	SOCK_SIP.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+	SOCK_SIP.setblocking(0)
+	log.info('Activating SIP Port on '+str(LOCAL_SIP_IP)+':'+str(LOCAL_SIP_PORT))
+	SOCK_SIP.bind((LOCAL_SIP_IP,LOCAL_SIP_PORT))
+	log.info('Waiting for SIP Messages from '+str(DEST_SIP_IP)+':'+str(DEST_SIP_PORT))
 
 def sipDisconnect():
-        sock.close()
-	print 'Disconnected from SIP Network'
-	print '*****************************************'
+        SOCK_SIP.close()
+	log.info('Disconnected from SIP Network')
 
 ######
 # Store SMS FROM SMPP 2 SIP
 ######
-def smpp2sip( smpp ):
-	smpp.set_message_received_handler(recv_handler)
-	print 'Waiting for SMPP...'
+def smpp2sip():
+	#log.info('Waiting for SMPP...')
+	SOCK_SMPP.set_message_received_handler(recv_handler)
 
 def recv_handler(**args):
-	p = args['pdu']
-       	msg = p.short_message
-        sendViaSIP(p.source_addr, p.destination_addr, msg)
+	pdu = args['pdu']
+	if pdu and pdu.short_message:
+       		msg = pdu.short_message
+        	sendViaSIP(pdu.source_addr, pdu.destination_addr, msg)
 
-def sendViaSipSack( source, dest, msg ):
-        os.system('sipsak -c sip:'+str(source)+'@127.0.0.1:5061 -M -v -s sip:'+str(dest)+'@127.0.0.1:5061 -B "'+str(msg)+'"')
+#def sendViaSipSack( source, dest, msg ):
+#        os.system('sipsak -c sip:'+str(source)+'@127.0.0.1:5061 -M -v -s sip:'+str(dest)+'@127.0.0.1:5061 -B "'+str(msg)+'"')
 
 def sendViaSIP( source , dest, msg ):
 
@@ -100,7 +119,7 @@ def sendViaSIP( source , dest, msg ):
 
 	logSMS(source,dest,msg, "SMPP -> SIP")
 	
-	sock.sendto(str(SIPMSG), (DEST_SIP_IP,DEST_SIP_PORT) )
+	SOCK_SIP.sendto(str(SIPMSG), (DEST_SIP_IP,DEST_SIP_PORT) )
 
 ######
 # Store SMS FROM SIP 2 SMPP
@@ -109,7 +128,7 @@ def sip2smpp():
 	while 1:
 		time.sleep(0.01)
 		try:
-      			data, addr = sock.recvfrom(1024)
+      			data, addr = SOCK_SIP.recvfrom(1024)
   		except Exception, e:
       			pass
   		else:
@@ -147,27 +166,24 @@ def sip2smpp():
     			SIPMSG += 'Supported: timer, precondition, path, replaces\r\n'
     			SIPMSG += 'Content-Length: 0\r\n'
 			try:
-				sock.sendto(str(SIPMSG), (FROM_HOST,FROM_PORT) )
+				SOCK_SIP.sendto(str(SIPMSG), (FROM_HOST,FROM_PORT) )
 			except Exception,e:
-				print "Reply to SIP : "+str(e)
+				log.info("Reply to SIP : "+str(e))
 			if isMessage == 1:
 				try: 
 					sendViaSMPP( fromNumber, toNumber, DATA)
 				except Exception,e:
-					print "Send Via sip : "+str(e)
+					log.info("Send Via sip : "+str(e))
 
-def sendViaSMPP( FROM, TO, msg ):			
-    smppSend = smpplib.client.Client(SMPP_IP, SMPP_PORT)
-    smppSend.connect()
-    smppSend.bind_transmitter(system_id=SMPP_LOGIN, password=SMPP_PASSWORD, system_type='TEST')
-    length = len(msg)
+def sendViaSMPP( FROM, TO, msg ):
+    length  = len(msg)
     splitat = 140
     # 140 Sur des multi sms
     parts = length/splitat +1
     if length > splitat:
         for k in range(parts):
             msgpart =  msg[k*splitat:k*splitat+splitat]
-            smppSend.send_message(source_addr_ton=5,
+            SOCK_SMPP.send_message(source_addr_ton=5,
                                 source_addr_npi=3,
                                 source_addr=FROM,
                                 dest_addr_ton=smpplib.command.SMPP_TON_UNK,
@@ -178,7 +194,7 @@ def sendViaSMPP( FROM, TO, msg ):
                                 sar_segment_seqnum = k+1,
                                 message_payload=msgpart)
     else:
-        smppSend.send_message(source_addr_ton=5,
+        SOCK_SMPP.send_message(source_addr_ton=5,
                                 source_addr_npi = 3,
                                 source_addr=FROM,
                                 dest_addr_ton=smpplib.command.SMPP_TON_UNK,
@@ -186,8 +202,6 @@ def sendViaSMPP( FROM, TO, msg ):
                                 destination_addr=TO,
                                 short_message=msg)
 
-    smppSend.unbind()
-    smppSend.disconnect()
     logSMS(FROM,TO,msg, "SIP -> SMPP")
 
 ########
@@ -200,24 +214,27 @@ try:
 	print '| (___ | \  / | (___ | |     '
 	print ' \___ \| |\/| |\___ \| |     '
 	print ' ____) | |  | |____) | |____ '
-	print '|_____/|_|  |_|_____/ \_____| sip2smpp v2'
-	print '*****************************************'
+	print '|_____/|_|  |_|_____/ \_____| sip2smpp v2.1'
+	print '***************Connection SIP***************'
 	time.sleep(1)
 	sipConnect()
-	print '*****************************************'
+	print '**************Connection  SMPP**************'
 	time.sleep(1)
-	smpp = smppConnect()
+	smppConnect()
+	print '***************Start  threads***************'
 	start_new_thread( sip2smpp ,())
-	print '*****************************************'
-	smpp.listen()
+	start_new_thread( smpp2sip ,())
+	print '********************************************'
+	SOCK_SMPP.listen()
 except Exception,e:
-	print e        
+	log.error(e)        
 finally:
 	try:
-		smppDisconnect( smpp )
+		smppDisconnect()
 	except Exception,e:
-		print "SMPP not connected \n Reason : "+str(e)
+		log.error("SMPP not connected \n Reason : "+str(e))
 	try:
 		sipDisconnect()
 	except Exception,e:
-		print "SIP not connected\n Reason : "+str(e)
+		log.error("SIP not connected\n Reason : "+str(e))
+	print '******************* Close ******************'

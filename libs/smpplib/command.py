@@ -24,11 +24,16 @@
 
 import struct
 import binascii
+import logging
 
 import smpp
 import pdu
 from ptypes import ostr, flag
 
+##########
+#LOG
+logcommand = logging.getLogger('smpplib.command')
+##########
 
 #
 # TON (Type Of Number) values
@@ -216,8 +221,8 @@ def get_command_name(code):
     """Return command name by given code. If code is unknown, raise
     UnkownCommandError exception"""
 
-    print str(code)
-    print "code : %x" %code
+    logcommand.debug(str(code))
+    logcommand.debug("code : %x", code)
 
     try:
         if str(code) != "258":

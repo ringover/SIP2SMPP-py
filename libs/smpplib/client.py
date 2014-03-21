@@ -4,6 +4,7 @@ import socket
 import struct
 import binascii
 import time
+import logging
 
 import smpp
 import pdu
@@ -15,10 +16,6 @@ SMPP_CLIENT_STATE_OPEN = 1
 SMPP_CLIENT_STATE_BOUND_TX = 2
 SMPP_CLIENT_STATE_BOUND_RX = 3
 SMPP_CLIENT_STATE_BOUND_TRX = 4
-
-# Debug mode
-# If set to True, debug messages will be outputted to stdout.
-DEBUG = True
 
 
 command_states = {
@@ -86,14 +83,7 @@ state_setters = {
 #
 responses = 0
 
-
-def log(*msg):
-    """Log message"""
-
-    msg = map(str, msg)
-
-    if DEBUG:
-        print 'DEBUG:', ' '.join(msg)
+logger    = logging.getLogger('smpplib.client')
 
 
 class Client:
@@ -116,7 +106,7 @@ class Client:
         self.host = host
         self.port = int(port)
         self._socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._socket.settimeout(5)
+        self._socket.settimeout(1)
         self._error_stack = []
         self.receiver_mode = False
 
@@ -124,7 +114,7 @@ class Client:
     def connect(self):
         """Connect to SMSC"""
 
-        log('Connecting to %s:%s...' % (self.host, self.port))
+        logger.info('Connecting to %s:%s...' % (self.host, self.port))
 
         try:
             self._socket.connect((self.host, self.port))
@@ -136,7 +126,7 @@ class Client:
     def disconnect(self):
         """Disconnect from the SMSC"""
         
-        log('Disconnecting...')
+        logger.info('Disconnecting...')
 
         self._socket.close()
         self.state = SMPP_CLIENT_STATE_CLOSED
@@ -191,11 +181,11 @@ class Client:
                 % (p.command, pdu.descs[pdu.SMPP_ESME_RINVBNDSTS]))
 
         self._push_pdu(p)
-        log('Sending %s PDU' % (p.command))
+        logger.debug('Sending %s PDU' % (p.command))
 
         generated = p.generate()
 
-        log('>>', binascii.b2a_hex(generated), len(generated), 'bytes')
+        logger.debug('>> ' + binascii.b2a_hex(generated) + " " + str(len(generated)) + ' bytes')
         res = self._socket.send(generated)
 
         return True
@@ -204,27 +194,34 @@ class Client:
     def read_pdu(self):
         """Read PDU from the SMSC"""
 
-        log('Waiting for PDU...')
+        logger.debug('Waiting for PDU...')
 
         raw_len = self._socket.recv(4)
         if raw_len == 0:
             return False
+	
+#	import pdb
+#	pdb.set_trace()
 
         try:
             length = struct.unpack('>L', raw_len)[0]
         except struct.error:
             #raise ConnectionError("Connection to server lost")
-            log('Receive broken pdu...')
+            logger.error('Receive broken pdu...')
             return False
         raw_pdu = self._socket.recv(length - 4)
         raw_pdu = raw_len + raw_pdu
 
-        log('<<', binascii.b2a_hex(raw_pdu), len(raw_pdu), 'bytes')
+        logger.debug('<< ' + binascii.b2a_hex(raw_pdu) + str(len(raw_pdu)) + ' bytes')
 
         cmd = pdu.PDU.extract_command(raw_pdu)
-        log('Read %s PDU' % cmd)
 
-        p = smpp.parse_pdu(raw_pdu)
+	if cmd is None:
+	    return False
+
+        logger.debug('Read %s PDU' % cmd)
+        
+	p = smpp.parse_pdu(raw_pdu)
         self._push_pdu(p)
 
         if p.is_error():
@@ -252,7 +249,7 @@ class Client:
     def _enquire_link_received(self):
         ler = smpp.make_pdu('enquire_link_resp')#, message_id=args['pdu'].sm_default_msg_id)
         self.send_pdu(ler)
-        log("Link Enuiry...")
+        logger.info("Link Enuiry...")
         
     def set_message_received_handler(self, func):
         """Set new function to handle message receive event"""
@@ -264,7 +261,7 @@ class Client:
     def message_received_handler(**args):
         """Custom handler to process received message. May be overridden"""
 
-        log('Message received handler (shoud be overridden)')
+        logger.info('Message received handler (shoud be overridden)')
     
         
     def listen(self):
@@ -279,20 +276,20 @@ class Client:
             try:
                 p = self.read_pdu()
             except socket.timeout:
-                log('Socket timeout, listening again')
+                logger.debug('Socket timeout, listening again')
                 continue
-	    #except:
-		#break
+	    if p is False:
+		continue
 
             if p.command == 'unbind': #unbind_res
-                log('Unbind command received')
+                logger.info('Unbind command received')
                 break
             elif p.command == 'deliver_sm':
                 self._message_received(p)
             elif p.command == 'enquire_link':
                 self._enquire_link_received()
             else:
-                print "WARNING: Unhandled SMPP command '%s'" % p.command
+                logger.warning("Unhandled SMPP command '%s'", p.command)
                 
 
 
